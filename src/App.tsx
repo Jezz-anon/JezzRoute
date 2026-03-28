@@ -2,17 +2,15 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { MotorcycleRoute, Waypoint, createDefaultRoute } from './types';
 import { RouteMap } from './components/RouteMap';
-import { RouteToolbar } from './components/RouteToolbar';
 import { RoutePreferencesPanel } from './components/RoutePreferencesPanel';
 import { WaypointsList } from './components/WaypointsList';
 import { RouteInput } from './components/RouteInput';
 import { ExportPanel } from './components/ExportPanel';
-import { RouteInfo } from './components/RouteInfo';
 import { SavedRoutes } from './components/SavedRoutes';
 import { MapPOILayers, POILayerState } from './components/MapPOILayers';
 import { importGPXToRoute } from './utils/importUtils';
 import { calculateRoute, RouteChunk } from './utils/routing';
-import { saveRoute } from './utils/routeStorage';
+import { saveRoute, formatDistance, formatDuration } from './utils/routeStorage';
 import { voiceAlerts } from './utils/voiceAlerts';
 import 'leaflet/dist/leaflet.css';
 
@@ -36,6 +34,16 @@ function App() {
     parkingAreas: false,
   });
   const waypointHistoryRef = useRef<Waypoint[][]>([]);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(route.name);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleTabToggle = useCallback((tab: string) => {
+    setActiveTab(prev => prev === tab ? null : tab);
+    setShowMenu(false);
+  }, []);
 
   // Calculate route when waypoints or preferences change
   // Use a ref to prevent duplicate concurrent requests
@@ -361,85 +369,224 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
-      {/* Header/Toolbar */}
-      <RouteToolbar
-        route={route}
-        onUpdateRoute={handleUpdateRoute}
-        onClearRoute={handleClearRoute}
-        onImportGPX={handleImportGPX}
-        onCalculateRoute={handleCalculateRoute}
-        onSaveRoute={handleSaveRoute}
-        onUndo={handleUndo}
-        isCalculating={isCalculating}
-      />
+    <div className="h-screen relative overflow-hidden">
+      {/* Full-screen Map */}
+      <div className="absolute inset-0">
+        <RouteMap
+          waypoints={route.waypoints}
+          routeCoordinates={routeCoordinates}
+          routeChunks={routeChunks}
+          onMapClick={handleMapClick}
+          onWaypointDrag={handleWaypointDrag}
+          focusedWaypoint={focusedWaypoint}
+          isCalculating={isCalculating}
+          poiLayers={poiLayers}
+        />
+      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden gap-3 p-3 relative">
-        {/* Sidebar */}
-        <div className="w-72 bg-gray-50 border border-gray-300 rounded-lg shadow-md overflow-y-auto p-3 space-y-3">
-          {/* Route Input - From/To */}
-          <RouteInput
-            fromLocation={fromLocation}
-            toLocation={toLocation}
-            onFromChange={setFromLocation}
-            onToChange={setToLocation}
-            onSetWaypoints={handleSetRouteFromInputs}
-            isLoading={isGeocoding}
-          />
+      {/* Compact Header */}
+      <header className="absolute top-0 left-0 right-0 z-[1001] bg-gray-900/85 backdrop-blur-sm" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+        <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-xl flex-shrink-0">🏍️</span>
+            {isEditingName ? (
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onBlur={() => { if (editName.trim()) handleUpdateRoute({ name: editName.trim() }); setIsEditingName(false); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { if (editName.trim()) handleUpdateRoute({ name: editName.trim() }); setIsEditingName(false); } }}
+                className="flex-1 min-w-0 px-2 py-0.5 text-sm font-semibold bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-orange-500"
+                autoFocus
+              />
+            ) : (
+              <span
+                className="text-sm font-semibold text-white truncate cursor-pointer hover:text-orange-400 transition-colors"
+                onClick={() => { setEditName(route.name); setIsEditingName(true); }}
+              >
+                {route.name}
+              </span>
+            )}
+          </div>
 
-          {/* Route Preferences */}
-          <RoutePreferencesPanel
-            preferences={route.preferences}
-            onChange={handleUpdatePreferences}
-          />
-
-          {/* Waypoints List */}
-          <WaypointsList
-            waypoints={route.waypoints}
-            onReorder={handleReorderWaypoints}
-            onRemove={handleRemoveWaypoint}
-            onRename={handleRenameWaypoint}
-            onFocus={handleFocusWaypoint}
-          />
-
-          {/* Map Layers Panel */}
-          <MapPOILayers
-            poiLayers={poiLayers}
-            onChange={setPoiLayers}
-          />
-
-          {/* Export Panel */}
-          <ExportPanel route={route} />
-        </div>
-
-        {/* Map */}
-        <div className="flex-1 h-full overflow-hidden">
-          <RouteMap
-            waypoints={route.waypoints}
-            routeCoordinates={routeCoordinates}
-            routeChunks={routeChunks}
-            onMapClick={handleMapClick}
-            onWaypointDrag={handleWaypointDrag}
-            focusedWaypoint={focusedWaypoint}
-            isCalculating={isCalculating}
-            poiLayers={poiLayers}
-          />
-          
-          {/* Route Info Overlay */}
-          {false && (
-            <RouteInfo route={route} isCalculating={isCalculating} />
+          {route.totalDistance != null && route.totalDistance > 0 && (
+            <div className="flex items-center gap-2 text-xs text-gray-300 flex-shrink-0 mx-2">
+              <span className="text-orange-400">{formatDistance(route.totalDistance, route.preferences.units)}</span>
+              {route.estimatedDuration != null && route.estimatedDuration > 0 && (
+                <>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-orange-400">{formatDuration(route.estimatedDuration)}</span>
+                </>
+              )}
+            </div>
           )}
 
-
-
-          {/* Saved Routes Panel */}
-          <SavedRoutes
-            onLoadRoute={handleLoadRoute}
-            currentUnitPreference={route.preferences.units}
-          />
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-2 text-gray-300 hover:text-white rounded-lg hover:bg-gray-700/50 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+
+        {isCalculating && (
+          <div className="h-0.5 bg-orange-200 overflow-hidden">
+            <div className="h-full bg-orange-500 animate-calculating" />
+          </div>
+        )}
+      </header>
+
+      {/* Menu Dropdown */}
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 z-[1001]" onClick={() => setShowMenu(false)} />
+          <div className="absolute top-12 right-2 z-[1002] bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden min-w-[180px]" style={{ marginTop: 'env(safe-area-inset-top)' }}>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (event) => handleImportGPX(event.target?.result as string);
+                  reader.readAsText(file);
+                }
+                if (e.target) e.target.value = '';
+              }}
+              accept=".gpx"
+              className="hidden"
+            />
+            <button
+              onClick={() => { handleCalculateRoute(); setShowMenu(false); }}
+              disabled={route.waypoints.length < 2 || isCalculating}
+              className="w-full px-4 py-3 text-left text-sm text-white hover:bg-gray-700 disabled:text-gray-500 disabled:hover:bg-transparent flex items-center gap-3 transition-colors"
+            >
+              <span>⚡</span>
+              {isCalculating ? 'Calculating...' : 'Calculate Route'}
+            </button>
+            <button
+              onClick={() => { handleUndo(); setShowMenu(false); }}
+              disabled={route.waypoints.length === 0}
+              className="w-full px-4 py-3 text-left text-sm text-white hover:bg-gray-700 disabled:text-gray-500 disabled:hover:bg-transparent flex items-center gap-3 transition-colors"
+            >
+              <span>↩️</span>
+              Undo
+            </button>
+            <button
+              onClick={() => { fileInputRef.current?.click(); setShowMenu(false); }}
+              className="w-full px-4 py-3 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-3 transition-colors"
+            >
+              <span>📂</span>
+              Import GPX
+            </button>
+            <button
+              onClick={() => { handleSaveRoute(); setShowMenu(false); }}
+              disabled={route.waypoints.length < 2}
+              className="w-full px-4 py-3 text-left text-sm text-white hover:bg-gray-700 disabled:text-gray-500 disabled:hover:bg-transparent flex items-center gap-3 transition-colors"
+            >
+              <span>💾</span>
+              Save Route
+            </button>
+            <button
+              onClick={() => { handleClearRoute(); setShowMenu(false); }}
+              className="w-full px-4 py-3 text-left text-sm text-white hover:bg-gray-700 flex items-center gap-3 transition-colors border-t border-gray-700"
+            >
+              <span>🗑️</span>
+              Clear Route
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Bottom Panel */}
+      {activeTab && (
+        <div
+          className="absolute left-0 right-0 z-[1001] bottom-panel"
+          style={{ bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}
+        >
+          <div className="bg-white rounded-t-2xl shadow-2xl border-t border-gray-200">
+            <div className="flex items-center justify-center pt-2 pb-1">
+              <div className="w-8 h-1 bg-gray-300 rounded-full" />
+            </div>
+            <div className="max-h-[45vh] overflow-y-auto px-3 pb-3 space-y-3">
+              {activeTab === 'route' && (
+                <>
+                  <RouteInput
+                    fromLocation={fromLocation}
+                    toLocation={toLocation}
+                    onFromChange={setFromLocation}
+                    onToChange={setToLocation}
+                    onSetWaypoints={handleSetRouteFromInputs}
+                    isLoading={isGeocoding}
+                  />
+                  <SavedRoutes
+                    onLoadRoute={handleLoadRoute}
+                    currentUnitPreference={route.preferences.units}
+                  />
+                </>
+              )}
+              {activeTab === 'points' && (
+                <WaypointsList
+                  waypoints={route.waypoints}
+                  onReorder={handleReorderWaypoints}
+                  onRemove={handleRemoveWaypoint}
+                  onRename={handleRenameWaypoint}
+                  onFocus={handleFocusWaypoint}
+                />
+              )}
+              {activeTab === 'settings' && (
+                <>
+                  <RoutePreferencesPanel
+                    preferences={route.preferences}
+                    onChange={handleUpdatePreferences}
+                  />
+                  <MapPOILayers
+                    poiLayers={poiLayers}
+                    onChange={setPoiLayers}
+                  />
+                </>
+              )}
+              {activeTab === 'export' && (
+                <ExportPanel route={route} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Tab Bar */}
+      <nav
+        className="absolute bottom-0 left-0 right-0 z-[1002] bg-gray-900/95 backdrop-blur-sm border-t border-gray-700"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex items-center justify-around">
+          {[
+            { id: 'route', icon: '🗺️', label: 'Route' },
+            { id: 'points', icon: '📍', label: 'Points' },
+            { id: 'settings', icon: '⚙️', label: 'Settings' },
+            { id: 'export', icon: '📤', label: 'Export' },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabToggle(tab.id)}
+              className={`flex flex-col items-center py-2 px-4 transition-colors ${
+                activeTab === tab.id
+                  ? 'text-orange-400'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <span className="text-lg leading-none">{tab.icon}</span>
+              <span className="text-[10px] font-medium mt-1">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
     </div>
   );
 }

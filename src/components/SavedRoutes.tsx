@@ -43,7 +43,7 @@ export const SavedRoutes: React.FC<Props> = ({ onLoadRoute, currentUnitPreferenc
   }
 
   return (
-    <div className="absolute bottom-4 right-4 bg-white/95 backdrop-blur rounded-lg shadow-lg z-[1000]">
+    <div className="bg-white rounded-lg shadow-md border border-gray-200">
       <button
         onClick={handleToggleExpand}
         className="w-full px-4 py-3 flex items-center justify-between gap-2 hover:bg-gray-50 transition-colors"

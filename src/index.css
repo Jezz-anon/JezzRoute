@@ -119,3 +119,38 @@ body,
 .peer:checked ~ div:last-child {
   transform: translateX(16px);
 }
+
+/* Leaflet control positioning - avoid overlap with app header and tab bar */
+.leaflet-top.leaflet-left {
+  top: 52px !important;
+}
+
+.leaflet-bottom {
+  bottom: 64px !important;
+}
+
+/* Calculating route progress animation */
+@keyframes calculating {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-calculating {
+  animation: calculating 1.2s ease-in-out infinite;
+}
+
+/* Bottom panel slide-up */
+.bottom-panel {
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

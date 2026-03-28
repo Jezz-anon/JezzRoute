@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e40af"/>
+      <stop offset="100%" style="stop-color:#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Road/route path -->
+  <path d="M80 420 Q180 280 256 200 Q332 120 432 80" stroke="white" stroke-width="28" fill="none" stroke-linecap="round"/>
+  <path d="M80 420 Q180 280 256 200 Q332 120 432 80" stroke="#fbbf24" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="18,14"/>
+  <!-- Map pin at start -->
+  <circle cx="80" cy="420" r="18" fill="#22c55e"/>
+  <circle cx="80" cy="420" r="8" fill="white"/>
+  <!-- Map pin at end -->
+  <circle cx="432" cy="80" r="18" fill="#ef4444"/>
+  <circle cx="432" cy="80" r="8" fill="white"/>
+  <!-- Motorcycle silhouette -->
+  <g transform="translate(220,320) scale(0.9)" fill="white" opacity="0.9">
+    <circle cx="0" cy="30" r="16" fill="none" stroke="white" stroke-width="5"/>
+    <circle cx="70" cy="30" r="16" fill="none" stroke="white" stroke-width="5"/>
+    <path d="M8 30 L20 0 L55 0 L65 15 L50 15 L45 5 L30 5 L22 30Z" fill="white"/>
+    <rect x="20" y="-5" width="20" height="5" rx="2" fill="white"/>
+  </g>
+</svg>

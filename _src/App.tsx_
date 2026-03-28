@@ -1,0 +1,461 @@
+import { useState, useCallback, useRef } from 'react'
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMapEvents } from 'react-leaflet'
+import { DivIcon } from 'leaflet'
+import { FaMotorcycle, FaRoad, FaMountain, FaCar, FaShare, FaDownload, FaUndo, FaTrash, FaPlus, FaMapMarkerAlt } from 'react-icons/fa'
+import { v4 as uuidv4 } from 'uuid'
+
+// Types
+interface Waypoint {
+  id: string
+  lat: number
+  lng: number
+  type: 'start' | 'via' | 'end'
+}
+
+interface RouteSettings {
+  curviness: 'low' | 'medium' | 'high'
+  avoidHighways: boolean
+  avoidUnpaved: boolean
+  avoidTolls: boolean
+}
+
+interface RouteData {
+  coordinates: [number, number][]
+  distance: number
+  duration: number
+}
+
+// Custom icons
+const createCustomIcon = (color: string, symbol: string) => {
+  return new DivIcon({
+    className: 'custom-marker',
+    html: `<div style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 20px; font-weight: bold; color: white;">${symbol}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  })
+}
+
+// Map click handler component
+function MapClickHandler({ onClick }: { onClick: (e: any) => void }) {
+  useMapEvents({
+    click: onClick
+  })
+  return null
+}
+
+// Main App Component
+function App() {
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([])
+  const [route, setRoute] = useState<RouteData | null>(null)
+  const [settings, setSettings] = useState<RouteSettings>({
+    curviness: 'medium',
+    avoidHighways: true,
+    avoidUnpaved: true,
+    avoidTolls: false
+  })
+  const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const mapRef = useRef<any>(null)
+
+  // Generate unique ID
+  const generateId = () => uuidv4()
+
+  // Add waypoint
+  const addWaypoint = useCallback((lat: number, lng: number, type: 'start' | 'via' | 'end') => {
+    const newWaypoint: Waypoint = {
+      id: generateId(),
+      lat,
+      lng,
+      type
+    }
+
+    setWaypoints(prev => {
+      const updated = [...prev, newWaypoint]
+      if (updated.length === 1) {
+        updated[0].type = 'start'
+      } else if (updated.length === 2) {
+        updated[0].type = 'start'
+        updated[1].type = 'end'
+      } else {
+        updated[0].type = 'start'
+        updated[updated.length - 1].type = 'end'
+        for (let i = 1; i < updated.length - 1; i++) {
+          updated[i].type = 'via'
+        }
+      }
+      return updated
+    })
+  }, [])
+
+  // Remove waypoint
+  const removeWaypoint = useCallback((id: string) => {
+    setWaypoints(prev => prev.filter(wp => wp.id !== id))
+    setRoute(null)
+  }, [])
+
+  // Update waypoint position
+  const updateWaypoint = useCallback((id: string, lat: number, lng: number) => {
+    setWaypoints(prev => prev.map(wp => 
+      wp.id === id ? { ...wp, lat, lng } : wp
+    ))
+    setRoute(null)
+  }, [])
+
+  // Calculate route using OSRM
+  const calculateRoute = useCallback(async () => {
+    if (waypoints.length < 2) {
+      setErrorMessage('Add at least a start and end point')
+      return
+    }
+
+    setLoading(true)
+    setErrorMessage(null)
+
+    try {
+      const coords = waypoints.map(wp => `${wp.lng},${wp.lat}`).join(';')
+      // Build query parameters based on settings
+      const params = [
+        'overview=full',
+        'geometries=geojson',
+        settings.avoidHighways ? 'exclude=motorway' : '',
+        settings.avoidUnpaved ? 'exclude=unpaved' : '',
+        settings.avoidTolls ? 'exclude=toll' : '',
+        settings.curviness === 'high' ? 'curviness=high' : settings.curviness === 'medium' ? 'curviness=medium' : 'curviness=low'
+      ].filter(Boolean).join('&')
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?${params}`
+      
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('Failed to calculate route')
+      
+      const data = await response.json()
+      
+      if (data.routes && data.routes.length > 0) {
+        const routeData = data.routes[0]
+        const coordinates = routeData.geometry.coordinates.map((coord: number[]) => [coord[1], coord[0]])
+        
+        setRoute({
+          coordinates,
+          distance: routeData.distance / 1000, // km
+          duration: routeData.duration / 60 // minutes
+        })
+      } else {
+        setErrorMessage('No route found')
+      }
+    } catch (err) {
+      setErrorMessage('Error calculating route: ' + (err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [waypoints])
+
+  // Export as GPX
+  const exportGPX = useCallback(() => {
+    if (!route) return
+
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MotoRoute Planner" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Motorcycle Route</name>
+    <trkseg>
+${route.coordinates.map(coord => `      <trkpt lat="${coord[0]}" lon="${coord[1]}"/>`).join('\n')}
+    </trkseg>
+  </trk>
+</gpx>`
+
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `moto-route-${Date.now()}.gpx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [route])
+
+  // Clear all
+  const clearAll = useCallback(() => {
+    setWaypoints([])
+    setRoute(null)
+    setErrorMessage(null)
+  }, [])
+
+  // Map click handler
+  const handleMapClick = useCallback((e: any) => {
+    const { lat, lng } = e.latlng
+    
+    if (waypoints.length === 0) {
+      addWaypoint(lat, lng, 'start')
+    } else if (waypoints.length === 1 && !waypoints.some(wp => wp.type === 'end')) {
+      addWaypoint(lat, lng, 'end')
+    } else {
+      addWaypoint(lat, lng, 'via')
+    }
+  }, [waypoints, addWaypoint])
+
+  // Handle waypoint drag end
+  return (
+    <div className="h-screen w-screen flex">
+      <Sidebar
+        waypoints={waypoints}
+        settings={settings}
+        setSettings={setSettings}
+        removeWaypoint={removeWaypoint}
+        route={route}
+        calculateRoute={calculateRoute}
+        exportGPX={exportGPX}
+        clearAll={clearAll}
+        loading={loading}
+        error={errorMessage}
+      />
+      <MapSection
+        waypoints={waypoints}
+        route={route}
+        handleMapClick={handleMapClick}
+        handleDragEnd={handleDragEnd}
+        mapRef={mapRef}
+        createCustomIcon={createCustomIcon}
+      />
+      {/* Error notification */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow-lg z-10">
+          {errorMessage}
+        </div>
+        </div>
+      )}
+    </div>
+  )
+}
+      {/* Error notification */}
+// Sidebar component
+function Sidebar({
+  waypoints,
+  settings,
+  setSettings,
+  removeWaypoint,
+  route,
+  calculateRoute,
+  exportGPX,
+  clearAll,
+  loading,
+  error
+}: {
+  waypoints: Waypoint[],
+  settings: RouteSettings,
+  setSettings: React.Dispatch<React.SetStateAction<RouteSettings>>,
+  removeWaypoint: (id: string) => void,
+  route: RouteData | null,
+  calculateRoute: () => void,
+  exportGPX: () => void,
+  clearAll: () => void,
+  loading: boolean,
+  error: string | null
+}) {
+  return (
+    <div className="w-80 bg-gray-900 text-white p-4 overflow-y-auto">
+      <h1 className="text-2xl font-bold mb-6 flex items-center gap-2">
+        <FaMotorcycle className="text-blue-500" />
+        MotoRoute Planner
+      </h1>
+      {/* Settings */}
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <FaRoad /> Route Settings
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm mb-1">Curviness Preference</label>
+            <select 
+              value={settings.curviness}
+              onChange={(e) => setSettings({...settings, curviness: e.target.value as any})}
+              className="w-full p-2 bg-gray-700 rounded border border-gray-600"
+            >
+              <option value="low">Low (Fastest)</option>
+              <option value="medium">Medium (Balanced)</option>
+              <option value="high">High (Most Curvy)</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={settings.avoidHighways}
+                onChange={(e) => setSettings({...settings, avoidHighways: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <FaCar /> Avoid Highways
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={settings.avoidUnpaved}
+                onChange={(e) => setSettings({...settings, avoidUnpaved: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <FaMountain /> Avoid Unpaved Roads
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={settings.avoidTolls}
+                onChange={(e) => setSettings({...settings, avoidTolls: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <FaShare /> Avoid Tolls
+            </label>
+          </div>
+        </div>
+      </div>
+      {/* Waypoints */}
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <FaMapMarkerAlt /> Waypoints ({waypoints.length})
+        </h2>
+        <div className="space-y-2">
+          {waypoints.map((wp, index) => (
+            <div key={wp.id} className="bg-gray-800 p-3 rounded flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {wp.type === 'start' && <FaPlus className="text-green-500" />}
+                {wp.type === 'end' && <FaTrash className="text-red-500" />}
+            disabled={isLoading || waypoints.length < 2}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 p-3 rounded flex items-center justify-center gap-2"
+          >
+            <FaRoad /> {isLoading ? 'Calculating...' : 'Calculate Route'}
+              </div>
+              <button 
+                onClick={() => removeWaypoint(wp.id)}
+                className="text-red-400 hover:text-red-300"
+              >
+                <FaTrash />
+              </button>
+            </div>
+          ))}
+        </div>
+        {waypoints.length === 0 && (
+          <p className="text-gray-400 text-sm">Click on the map to add waypoints</p>
+        )}
+      </div>
+      {/* Route Info */}
+      {route && (
+        <div className="mb-6 bg-blue-900/30 p-3 rounded">
+          <h3 className="font-semibold mb-2">Route Summary</h3>
+          <div className="space-y-1 text-sm">
+            <p>📏 Distance: {route.distance.toFixed(1)} km</p>
+            <p>⏱️ Duration: {Math.round(route.duration)} min</p>
+          </div>
+        </div>
+      )}
+      {/* Actions */}
+      <div className="space-y-2">
+        <button
+          onClick={calculateRoute}
+          disabled={loading || waypoints.length < 2}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 p-3 rounded flex items-center justify-center gap-2"
+        >
+          <FaRoad /> {loading ? 'Calculating...' : 'Calculate Route'}
+        </button>
+        <button
+          onClick={exportGPX}
+          disabled={!route}
+          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 p-3 rounded flex items-center justify-center gap-2"
+        >
+          <FaDownload /> Export GPX (Garmin/TomTom)
+        </button>
+        <button
+          onClick={clearAll}
+          className="w-full bg-red-600 hover:bg-red-700 p-3 rounded flex items-center justify-center gap-2"
+        >
+          <FaUndo /> Clear All
+        </button>
+      </div>
+      {/* Instructions */}
+      <div className="mt-6 text-sm text-gray-400">
+        <p className="font-semibold mb-2">How to use:</p>
+        <ol className="list-decimal list-inside space-y-1">
+          <li>Click on map to add start point</li>
+          <li>Click again to add end point</li>
+          <li>Add via points as needed</li>
+          <li>Adjust settings above</li>
+          <li>Click "Calculate Route"</li>
+          <li>Export as GPX for your device</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
+
+// MapSection component
+function MapSection({
+  waypoints,
+  route,
+  handleMapClick,
+  handleDragEnd,
+  mapRef,
+  createCustomIcon
+}: {
+  waypoints: Waypoint[],
+  route: RouteData | null,
+  handleMapClick: (e: any) => void,
+  handleDragEnd: (e: any) => void,
+  mapRef: React.RefObject<any>,
+  createCustomIcon: (color: string, symbol: string) => any
+}) {
+  return (
+    <div className="flex-1">
+      <MapContainer 
+        center={[48.8566, 2.3522]} 
+        zoom={10} 
+        style={{ height: '100%', width: '100%' }}
+        ref={mapRef}
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        {/* Route polyline */}
+        {route && (
+          <Polyline 
+            positions={route.coordinates}
+            color="#3b82f6"
+            weight={5}
+            opacity={0.8}
+          />
+        )}
+        {/* Waypoint markers */}
+        {waypoints.map((wp) => (
+          <Marker
+            key={wp.id}
+            position={[wp.lat, wp.lng]}
+            draggable
+            eventHandlers={{ dragend: handleDragEnd }}
+            icon={createCustomIcon(
+              wp.type === 'start' ? '#22c55e' : wp.type === 'end' ? '#ef4444' : '#eab308',
+              wp.type === 'start' ? '+' : wp.type === 'end' ? '×' : '●'
+            )}
+            waypointId={wp.id}
+          >
+            <Popup>
+              <div>
+                <b>{wp.type === 'start' ? 'Start' : wp.type === 'end' ? 'End' : 'Via Point'}</b>
+                <br />
+                Lat: {wp.lat.toFixed(5)}
+                <br />
+                Lng: {wp.lng.toFixed(5)}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+        {/* Map click handler */}
+        <MapClickHandler onClick={handleMapClick} />
+      </MapContainer>
+    </div>
+  )
+}
+
+export default App
+        <div className="absolute bottom-4 left-80 bg-red-600 text-white px-4 py-2 rounded shadow-lg z-10">
+          {error}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default App

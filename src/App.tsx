@@ -369,7 +369,7 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen relative overflow-hidden">
+    <div className="relative overflow-hidden" style={{ height: '100dvh' }}>
       {/* Full-screen Map */}
       <div className="absolute inset-0">
         <RouteMap
@@ -386,9 +386,9 @@ function App() {
 
       {/* Compact Header */}
       <header className="absolute top-0 left-0 right-0 z-[1001] bg-gray-900/85 backdrop-blur-sm" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="flex items-center justify-between px-3 py-2">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="text-xl flex-shrink-0">🏍️</span>
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-lg flex-shrink-0">🏍️</span>
             {isEditingName ? (
               <input
                 type="text"
@@ -508,7 +508,7 @@ function App() {
       {activeTab && (
         <div
           className="absolute left-0 right-0 z-[1001] bottom-panel"
-          style={{ bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}
+          style={{ bottom: 'calc(44px + env(safe-area-inset-bottom, 0px))' }}
         >
           <div className="bg-white rounded-t-2xl shadow-2xl border-t border-gray-200">
             <div className="flex items-center justify-center pt-2 pb-1">
@@ -563,7 +563,7 @@ function App() {
       {/* Bottom Tab Bar */}
       <nav
         className="absolute bottom-0 left-0 right-0 z-[1002] bg-gray-900/95 backdrop-blur-sm border-t border-gray-700"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}
       >
         <div className="flex items-center justify-around">
           {[
@@ -575,14 +575,14 @@ function App() {
             <button
               key={tab.id}
               onClick={() => handleTabToggle(tab.id)}
-              className={`flex flex-col items-center py-2 px-4 transition-colors ${
+              className={`flex flex-col items-center py-2 px-5 transition-colors ${
                 activeTab === tab.id
                   ? 'text-orange-400'
                   : 'text-gray-400 hover:text-gray-200'
               }`}
             >
               <span className="text-lg leading-none">{tab.icon}</span>
-              <span className="text-[10px] font-medium mt-1">{tab.label}</span>
+              <span className="text-[11px] font-medium mt-0.5">{tab.label}</span>
             </button>
           ))}
         </div>
